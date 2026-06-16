@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
@@ -33,29 +35,40 @@ func NewGDriveService() *GDriveService {
 }
 
 func (g *GDriveService) Init() error {
-	credJSON := os.Getenv("GDRIVE_CREDENTIALS_JSON")
+	clientID := os.Getenv("GDRIVE_CLIENT_ID")
+	clientSecret := os.Getenv("GDRIVE_CLIENT_SECRET")
+	refreshToken := os.Getenv("GDRIVE_REFRESH_TOKEN")
 	folderID := os.Getenv("GDRIVE_FOLDER_ID")
 
-	if credJSON == "" {
-		log.Println("GDRIVE_CREDENTIALS_JSON tidak diset, menggunakan penyimpanan lokal")
+	if clientID == "" || refreshToken == "" {
+		log.Println("Kredensial OAuth tidak lengkap, menggunakan penyimpanan lokal")
 		g.isLocal = true
 
 		uploadDir := "uploads"
 		if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
 			return fmt.Errorf("gagal membuat direktori uploads: %w", err)
 		}
-
 		return nil
 	}
 
-	// Validate JSON
-	var jsonCheck map[string]interface{}
-	if err := json.Unmarshal([]byte(credJSON), &jsonCheck); err != nil {
-		return fmt.Errorf("GDRIVE_CREDENTIALS_JSON bukan JSON yang valid: %w", err)
+	ctx := context.Background()
+
+	// KONFIGURASI OAUTH
+	config := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{drive.DriveFileScope},
 	}
 
-	ctx := context.Background()
-	srv, err := drive.NewService(ctx, option.WithCredentialsJSON([]byte(credJSON)))
+	token := &oauth2.Token{
+		RefreshToken: refreshToken,
+	}
+
+	// BUAT CLIENT BERDASARKAN TOKEN
+	client := config.Client(ctx, token)
+
+	srv, err := drive.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return fmt.Errorf("gagal membuat Google Drive service: %w", err)
 	}
@@ -64,7 +77,7 @@ func (g *GDriveService) Init() error {
 	g.folderID = folderID
 	g.isLocal = false
 
-	log.Println("Google Drive service berhasil diinisialisasi")
+	log.Println("Google Drive service berhasil diinisialisasi via OAuth")
 	return nil
 }
 
